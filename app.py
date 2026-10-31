@@ -23,7 +23,6 @@ def is_admin():
         return False
 
 def run_as_admin():
-    # Relaunch current script/executable with elevated admin privileges
     if getattr(sys, 'frozen', False):
         exe = sys.executable
         args = ""
@@ -36,8 +35,8 @@ def run_as_admin():
 
 def get_current_hypervisor_mode():
     try:
-        # Run bcdedit /enum {current} to find hypervisorlaunchtype
-        cmd = ["bcdedit", "/enum", "{current}"]
+        # Run standard bcdedit without invalid parameters
+        cmd = ["bcdedit"]
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -45,19 +44,20 @@ def get_current_hypervisor_mode():
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         )
         output = result.stdout.lower()
-        
+
+        # Parse output for hypervisorlaunchtype
         for line in output.splitlines():
             line_clean = line.strip()
-            if line_clean.startswith("hypervisorlaunchtype"):
+            if "hypervisorlaunchtype" in line_clean:
                 parts = line_clean.split()
                 if len(parts) >= 2:
-                    val = parts[1].strip()
-                    if val in ["auto", "on"]:
-                        return MODE_ACTIVE
-                    elif val == "off":
+                    val = parts[-1].strip()
+                    if val == "off":
                         return MODE_INACTIVE
+                    elif val in ["auto", "on"]:
+                        return MODE_ACTIVE
         
-        # If not explicitly defined, Windows default is Auto/Active
+        # If line does not exist in bcdedit, Windows default is Active (auto)
         return MODE_ACTIVE
     except Exception as e:
         print(f"Error checking bcdedit: {e}")
@@ -93,7 +93,6 @@ class CustomRestartDialog(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
 
-        # Center dialog relative to parent
         self.update_idletasks()
         pw = parent.winfo_width()
         ph = parent.winfo_height()
@@ -169,9 +168,7 @@ class HyperVSwitcherApp(tk.Tk):
         self.resizable(False, False)
         self.configure(bg="#121212")
 
-        # Center on screen
         self.center_window()
-
         self.current_mode = get_current_hypervisor_mode()
         self.create_widgets()
 
@@ -186,7 +183,6 @@ class HyperVSwitcherApp(tk.Tk):
         self.geometry(f"{w}x{h}+{x}+{y}")
 
     def create_widgets(self):
-        # Header Frame
         header = tk.Frame(self, bg="#1F2937", height=60)
         header.pack(fill="x")
         header.pack_propagate(False)
@@ -211,11 +207,9 @@ class HyperVSwitcherApp(tk.Tk):
         )
         badge_admin.pack(side="right", padx=20, pady=18)
 
-        # Body Frame
         body = tk.Frame(self, bg="#121212", padx=25, pady=20)
         body.pack(fill="both", expand=True)
 
-        # 1. Current Mode Display
         lbl_current_title = tk.Label(
             body,
             text="Current Mode:",
@@ -243,7 +237,6 @@ class HyperVSwitcherApp(tk.Tk):
         )
         self.lbl_current_val.pack(side="left", fill="x")
 
-        # 2. Switch To Dropdown
         lbl_switch_title = tk.Label(
             body,
             text="Switch to:",
@@ -253,7 +246,6 @@ class HyperVSwitcherApp(tk.Tk):
         )
         lbl_switch_title.pack(anchor="w")
 
-        # Determine target mode
         if self.current_mode == MODE_ACTIVE:
             default_target = MODE_INACTIVE
         else:
@@ -286,7 +278,6 @@ class HyperVSwitcherApp(tk.Tk):
         )
         self.combo.pack(fill="x", pady=(5, 20))
 
-        # 3. Action Buttons (OK / Cancel)
         btn_frame = tk.Frame(body, bg="#121212")
         btn_frame.pack(fill="x", side="bottom")
 
@@ -336,7 +327,6 @@ class HyperVSwitcherApp(tk.Tk):
             messagebox.showerror("Error", f"Failed to apply setting:\n{msg}")
             return
 
-        # Show restart popup dialog
         CustomRestartDialog(self)
 
     def on_cancel(self):
