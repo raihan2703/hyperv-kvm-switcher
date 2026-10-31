@@ -23,10 +23,6 @@ MODE_INACTIVE = "Hyper-V Inactive (for nested KVM in GNS3)"
 MODE_UNKNOWN = "Unknown / Undetermined"
 
 def get_script_path():
-    """
-    Finds DG_Readiness_Tool_v3.6.ps1 regardless of whether the app is running
-    as a Python script, inside dist folder, or bundled.
-    """
     candidates = []
     if getattr(sys, 'frozen', False):
         exe_dir = os.path.dirname(sys.executable)
@@ -63,13 +59,31 @@ def run_as_admin():
     sys.exit(0)
 
 def get_current_hypervisor_mode():
+    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+
+    # 1. Primary check: Query WMI DeviceGuard Status (VBS Status)
+    try:
+        wmi_cmd = [
+            "powershell.exe", "-NoProfile", "-Command",
+            "(Get-CimInstance Win32_DeviceGuard -Namespace root\\Microsoft\\Windows\\DeviceGuard -ErrorAction SilentlyContinue).VirtualizationBasedSecurityStatus"
+        ]
+        res = subprocess.run(wmi_cmd, capture_output=True, text=True, creationflags=flags)
+        vbs_val = res.stdout.strip()
+        if vbs_val == "0":
+            return MODE_INACTIVE
+        elif vbs_val == "2":
+            return MODE_ACTIVE
+    except Exception:
+        pass
+
+    # 2. Secondary check: bcdedit query
     try:
         cmd = ["bcdedit"]
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            creationflags=flags
         )
         output = result.stdout.lower()
 
@@ -83,11 +97,23 @@ def get_current_hypervisor_mode():
                         return MODE_INACTIVE
                     elif val in ["auto", "on"]:
                         return MODE_ACTIVE
-        
-        return MODE_ACTIVE
-    except Exception as e:
-        print(f"Error checking bcdedit: {e}")
-        return MODE_UNKNOWN
+    except Exception:
+        pass
+
+    # 3. Third check: Check VirtualMachinePlatform feature state
+    try:
+        dism_cmd = [
+            "dism", "/online", "/get-featureinfo", "/featurename:VirtualMachinePlatform"
+        ]
+        res = subprocess.run(dism_cmd, capture_output=True, text=True, creationflags=flags)
+        if "state : disabled" in res.stdout.lower():
+            return MODE_INACTIVE
+        elif "state : enabled" in res.stdout.lower():
+            return MODE_ACTIVE
+    except Exception:
+        pass
+
+    return MODE_INACTIVE
 
 def run_mode_switch_workflow(target_mode, progress_callback=None):
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
@@ -127,15 +153,13 @@ def run_mode_switch_workflow(target_mode, progress_callback=None):
                 progress_callback(f"Executing DG Readiness Tool ({os.path.basename(ps_script)})...")
             
             script_dir = os.path.dirname(ps_script)
-            # Run powershell directly in script's working directory
-            res = subprocess.run(
+            subprocess.run(
                 ["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", 
                  f"Set-Location '{script_dir}'; .\\DG_Readiness_Tool_v3.6.ps1 -Disable -ReadyForRemediation"],
                 capture_output=True,
                 text=True,
                 creationflags=flags
             )
-            print("DG Tool output:", res.stdout, res.stderr)
         else:
             if progress_callback:
                 progress_callback("Warning: DG_Readiness_Tool_v3.6.ps1 not found!")
