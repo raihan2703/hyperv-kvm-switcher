@@ -1,15 +1,13 @@
 """
 Hyper-V & KVM Mode Switcher
-Utility for Windows 10/11 to toggle between:
+Unified utility for Windows 10/11 to toggle between:
 - Hyper-V Active (for enable WSL2, Docker, etc)
 - Hyper-V Inactive (for nested KVM in GNS3)
 
-Automates both BCDedit and Windows Features (DISM):
-- VirtualMachinePlatform
-- HypervisorPlatform
-- Microsoft-Windows-Subsystem-Linux
-- Microsoft-Hyper-V-All
-- Containers-DisposableClientVM (Windows Sandbox)
+Automates:
+1. BCDedit hypervisorlaunchtype ({current})
+2. DISM Windows Features (VirtualMachinePlatform & WSL)
+3. DG_Readiness_Tool UEFI VBS Opt-Out Remediation
 """
 
 import sys
@@ -23,6 +21,11 @@ from tkinter import ttk, messagebox
 MODE_ACTIVE = "Hyper-V Active (for enable WSL2, Docker, etc)"
 MODE_INACTIVE = "Hyper-V Inactive (for nested KVM in GNS3)"
 MODE_UNKNOWN = "Unknown / Undetermined"
+
+def get_base_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
 
 def is_admin():
     try:
@@ -68,48 +71,50 @@ def get_current_hypervisor_mode():
         print(f"Error checking bcdedit: {e}")
         return MODE_UNKNOWN
 
-def run_dism_feature_management(target_mode, progress_callback=None):
-    """
-    Automates turning on or off Windows features based on target mode.
-    """
+def run_mode_switch_workflow(target_mode, progress_callback=None):
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    base_dir = get_base_dir()
 
     if target_mode == MODE_ACTIVE:
-        # Enable BCD hypervisor
-        subprocess.run(["bcdedit", "/set", "hypervisorlaunchtype", "auto"], creationflags=flags)
+        # 1. Enable Windows Features for WSL2
+        if progress_callback:
+            progress_callback("Enabling VirtualMachinePlatform & WSL...")
         
-        # Features to turn ON for WSL2 & Hyper-V
-        features_to_enable = [
-            "VirtualMachinePlatform",
-            "HypervisorPlatform",
-            "Microsoft-Windows-Subsystem-Linux"
-        ]
-        
-        for feat in features_to_enable:
-            if progress_callback:
-                progress_callback(f"Enabling {feat}...")
-            subprocess.run(
-                ["dism", "/online", "/enable-feature", f"/featurename:{feat}", "/all", "/norestart"],
-                creationflags=flags
-            )
-            
+        subprocess.run(
+            ["dism", "/online", "/enable-feature", "/featurename:VirtualMachinePlatform", "/all", "/norestart"],
+            creationflags=flags
+        )
+        subprocess.run(
+            ["dism", "/online", "/enable-feature", "/featurename:Microsoft-Windows-Subsystem-Linux", "/all", "/norestart"],
+            creationflags=flags
+        )
+
+        # 2. Set BCDedit to auto
+        if progress_callback:
+            progress_callback("Configuring bootloader to auto...")
+        subprocess.run(["bcdedit", "/set", "{current}", "hypervisorlaunchtype", "auto"], creationflags=flags)
+
     else: # MODE_INACTIVE (for GNS3 & KVM)
-        # Disable BCD hypervisor
-        subprocess.run(["bcdedit", "/set", "hypervisorlaunchtype", "off"], creationflags=flags)
-        
-        # Features to turn OFF for raw VT-x access
-        features_to_disable = [
-            "VirtualMachinePlatform",
-            "HypervisorPlatform",
-            "Microsoft-Hyper-V-All",
-            "Containers-DisposableClientVM"
-        ]
-        
-        for feat in features_to_disable:
+        # 1. Disable Virtual Machine Platform
+        if progress_callback:
+            progress_callback("Disabling VirtualMachinePlatform...")
+        subprocess.run(
+            ["dism", "/online", "/disable-feature", "/featurename:VirtualMachinePlatform", "/norestart"],
+            creationflags=flags
+        )
+
+        # 2. Set BCDedit to off
+        if progress_callback:
+            progress_callback("Configuring bootloader to off...")
+        subprocess.run(["bcdedit", "/set", "{current}", "hypervisorlaunchtype", "off"], creationflags=flags)
+
+        # 3. Run DG_Readiness_Tool to trigger UEFI VBS remediation
+        ps_script = os.path.join(base_dir, "DG_Readiness_Tool_v3.6.ps1")
+        if os.path.exists(ps_script):
             if progress_callback:
-                progress_callback(f"Disabling {feat}...")
+                progress_callback("Applying UEFI VBS remediation (DG Tool)...")
             subprocess.run(
-                ["dism", "/online", "/disable-feature", f"/featurename:{feat}", "/norestart"],
+                ["powershell", "-ExecutionPolicy", "Bypass", "-File", ps_script, "-Disable", "-ReadyForRemediation"],
                 creationflags=flags
             )
 
@@ -122,10 +127,10 @@ def restart_computer():
         messagebox.showerror("Error", f"Failed to restart: {e}")
 
 class CustomRestartDialog(tk.Toplevel):
-    def __init__(self, parent):
+    def __init__(self, parent, target_mode):
         super().__init__(parent)
         self.title("Restart Required")
-        self.geometry("450x210")
+        self.geometry("460x230")
         self.resizable(False, False)
         self.configure(bg="#1E1E1E")
         self.transient(parent)
@@ -136,24 +141,28 @@ class CustomRestartDialog(tk.Toplevel):
         ph = parent.winfo_height()
         px = parent.winfo_x()
         py = parent.winfo_y()
-        w = 450
-        h = 210
+        w = 460
+        h = 230
         x = px + max(0, (pw - w) // 2)
         y = py + max(0, (ph - h) // 2)
         self.geometry(f"{w}x{h}+{x}+{y}")
 
-        icon_lbl = tk.Label(self, text="⚙️", font=("Segoe UI", 28), bg="#1E1E1E", fg="#10B981")
-        icon_lbl.pack(pady=(15, 5))
+        icon_lbl = tk.Label(self, text="⚡", font=("Segoe UI", 26), bg="#1E1E1E", fg="#10B981")
+        icon_lbl.pack(pady=(12, 3))
+
+        note_extra = ""
+        if target_mode == MODE_INACTIVE:
+            note_extra = "\n(Note: Press F3 or Windows Key when prompted on boot to accept UEFI opt-out)"
 
         msg = tk.Label(
             self,
-            text="All related Windows Features & Bootloader\nhave been configured automatically!\nWould you like to restart your computer now?",
-            font=("Segoe UI", 10),
+            text=f"Configuration applied successfully!{note_extra}\nWould you like to restart your computer now?",
+            font=("Segoe UI", 9),
             bg="#1E1E1E",
             fg="#EDEDED",
             justify="center"
         )
-        msg.pack(pady=(0, 20))
+        msg.pack(pady=(0, 18))
 
         btn_frame = tk.Frame(self, bg="#1E1E1E")
         btn_frame.pack(fill="x", padx=30)
@@ -189,9 +198,6 @@ class CustomRestartDialog(tk.Toplevel):
             command=self.on_later
         )
         later_btn.pack(side="right", expand=True, fill="x", padx=(8, 0))
-
-    def on_restart():
-        pass
 
     def on_restart(self):
         self.destroy()
@@ -319,7 +325,6 @@ class HyperVSwitcherApp(tk.Tk):
         )
         self.combo.pack(fill="x", pady=(5, 15))
 
-        # Status text for DISM operations
         self.lbl_status = tk.Label(
             body,
             text="",
@@ -329,7 +334,6 @@ class HyperVSwitcherApp(tk.Tk):
         )
         self.lbl_status.pack(anchor="w", pady=(0, 10))
 
-        # Action Buttons (OK / Cancel)
         self.btn_frame = tk.Frame(body, bg="#121212")
         self.btn_frame.pack(fill="x", side="bottom")
 
@@ -374,8 +378,7 @@ class HyperVSwitcherApp(tk.Tk):
             )
             return
 
-        # Disable buttons and start background worker
-        self.btn_ok.config(state="disabled", text="Applying...")
+        self.btn_ok.config(state="disabled", text="Processing...")
         self.btn_cancel.config(state="disabled")
         self.combo.config(state="disabled")
 
@@ -384,15 +387,14 @@ class HyperVSwitcherApp(tk.Tk):
                 self.lbl_status.config(text=msg)
                 self.update_idletasks()
 
-            run_dism_feature_management(target_mode, update_progress)
+            run_mode_switch_workflow(target_mode, update_progress)
             
-            # Re-enable UI and show restart popup
-            self.lbl_status.config(text="Done! Features updated.")
+            self.lbl_status.config(text="Finished!")
             self.btn_ok.config(state="normal", text="OK")
             self.btn_cancel.config(state="normal")
             self.combo.config(state="readonly")
             
-            CustomRestartDialog(self)
+            CustomRestartDialog(self, target_mode)
 
         threading.Thread(target=worker, daemon=True).start()
 
