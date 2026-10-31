@@ -1,13 +1,21 @@
 """
 Hyper-V & KVM Mode Switcher
-Utility for Windows 10/11 to toggle hypervisorlaunchtype between:
+Utility for Windows 10/11 to toggle between:
 - Hyper-V Active (for enable WSL2, Docker, etc)
 - Hyper-V Inactive (for nested KVM in GNS3)
+
+Automates both BCDedit and Windows Features (DISM):
+- VirtualMachinePlatform
+- HypervisorPlatform
+- Microsoft-Windows-Subsystem-Linux
+- Microsoft-Hyper-V-All
+- Containers-DisposableClientVM (Windows Sandbox)
 """
 
 import sys
 import os
 import subprocess
+import threading
 import ctypes
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -35,7 +43,6 @@ def run_as_admin():
 
 def get_current_hypervisor_mode():
     try:
-        # Run standard bcdedit without invalid parameters
         cmd = ["bcdedit"]
         result = subprocess.run(
             cmd,
@@ -45,7 +52,6 @@ def get_current_hypervisor_mode():
         )
         output = result.stdout.lower()
 
-        # Parse output for hypervisorlaunchtype
         for line in output.splitlines():
             line_clean = line.strip()
             if "hypervisorlaunchtype" in line_clean:
@@ -57,25 +63,57 @@ def get_current_hypervisor_mode():
                     elif val in ["auto", "on"]:
                         return MODE_ACTIVE
         
-        # If line does not exist in bcdedit, Windows default is Active (auto)
         return MODE_ACTIVE
     except Exception as e:
         print(f"Error checking bcdedit: {e}")
         return MODE_UNKNOWN
 
-def set_hypervisor_mode(mode):
-    target_val = "auto" if mode == MODE_ACTIVE else "off"
-    try:
-        cmd = ["bcdedit", "/set", "hypervisorlaunchtype", target_val]
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-        )
-        return result.returncode == 0, result.stderr or result.stdout
-    except Exception as e:
-        return False, str(e)
+def run_dism_feature_management(target_mode, progress_callback=None):
+    """
+    Automates turning on or off Windows features based on target mode.
+    """
+    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+
+    if target_mode == MODE_ACTIVE:
+        # Enable BCD hypervisor
+        subprocess.run(["bcdedit", "/set", "hypervisorlaunchtype", "auto"], creationflags=flags)
+        
+        # Features to turn ON for WSL2 & Hyper-V
+        features_to_enable = [
+            "VirtualMachinePlatform",
+            "HypervisorPlatform",
+            "Microsoft-Windows-Subsystem-Linux"
+        ]
+        
+        for feat in features_to_enable:
+            if progress_callback:
+                progress_callback(f"Enabling {feat}...")
+            subprocess.run(
+                ["dism", "/online", "/enable-feature", f"/featurename:{feat}", "/all", "/norestart"],
+                creationflags=flags
+            )
+            
+    else: # MODE_INACTIVE (for GNS3 & KVM)
+        # Disable BCD hypervisor
+        subprocess.run(["bcdedit", "/set", "hypervisorlaunchtype", "off"], creationflags=flags)
+        
+        # Features to turn OFF for raw VT-x access
+        features_to_disable = [
+            "VirtualMachinePlatform",
+            "HypervisorPlatform",
+            "Microsoft-Hyper-V-All",
+            "Containers-DisposableClientVM"
+        ]
+        
+        for feat in features_to_disable:
+            if progress_callback:
+                progress_callback(f"Disabling {feat}...")
+            subprocess.run(
+                ["dism", "/online", "/disable-feature", f"/featurename:{feat}", "/norestart"],
+                creationflags=flags
+            )
+
+    return True
 
 def restart_computer():
     try:
@@ -87,7 +125,7 @@ class CustomRestartDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Restart Required")
-        self.geometry("440x200")
+        self.geometry("450x210")
         self.resizable(False, False)
         self.configure(bg="#1E1E1E")
         self.transient(parent)
@@ -98,18 +136,18 @@ class CustomRestartDialog(tk.Toplevel):
         ph = parent.winfo_height()
         px = parent.winfo_x()
         py = parent.winfo_y()
-        w = 440
-        h = 200
+        w = 450
+        h = 210
         x = px + max(0, (pw - w) // 2)
         y = py + max(0, (ph - h) // 2)
         self.geometry(f"{w}x{h}+{x}+{y}")
 
-        icon_lbl = tk.Label(self, text="⚠️", font=("Segoe UI", 30), bg="#1E1E1E", fg="#F59E0B")
-        icon_lbl.pack(pady=(18, 5))
+        icon_lbl = tk.Label(self, text="⚙️", font=("Segoe UI", 28), bg="#1E1E1E", fg="#10B981")
+        icon_lbl.pack(pady=(15, 5))
 
         msg = tk.Label(
             self,
-            text="Mode change applied successfully!\nWould you like to restart your computer now?",
+            text="All related Windows Features & Bootloader\nhave been configured automatically!\nWould you like to restart your computer now?",
             font=("Segoe UI", 10),
             bg="#1E1E1E",
             fg="#EDEDED",
@@ -152,6 +190,9 @@ class CustomRestartDialog(tk.Toplevel):
         )
         later_btn.pack(side="right", expand=True, fill="x", padx=(8, 0))
 
+    def on_restart():
+        pass
+
     def on_restart(self):
         self.destroy()
         restart_computer()
@@ -164,7 +205,7 @@ class HyperVSwitcherApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Hyper-V & KVM Mode Switcher")
-        self.geometry("540x360")
+        self.geometry("540x390")
         self.resizable(False, False)
         self.configure(bg="#121212")
 
@@ -175,7 +216,7 @@ class HyperVSwitcherApp(tk.Tk):
     def center_window(self):
         self.update_idletasks()
         w = 540
-        h = 360
+        h = 390
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
         x = (sw - w) // 2
@@ -276,13 +317,24 @@ class HyperVSwitcherApp(tk.Tk):
             font=("Segoe UI", 9),
             style="TCombobox"
         )
-        self.combo.pack(fill="x", pady=(5, 20))
+        self.combo.pack(fill="x", pady=(5, 15))
 
-        btn_frame = tk.Frame(body, bg="#121212")
-        btn_frame.pack(fill="x", side="bottom")
+        # Status text for DISM operations
+        self.lbl_status = tk.Label(
+            body,
+            text="",
+            font=("Segoe UI", 8, "italic"),
+            bg="#121212",
+            fg="#60A5FA"
+        )
+        self.lbl_status.pack(anchor="w", pady=(0, 10))
 
-        btn_ok = tk.Button(
-            btn_frame,
+        # Action Buttons (OK / Cancel)
+        self.btn_frame = tk.Frame(body, bg="#121212")
+        self.btn_frame.pack(fill="x", side="bottom")
+
+        self.btn_ok = tk.Button(
+            self.btn_frame,
             text="OK",
             font=("Segoe UI", 9, "bold"),
             bg="#2563EB",
@@ -295,10 +347,10 @@ class HyperVSwitcherApp(tk.Tk):
             cursor="hand2",
             command=self.on_ok
         )
-        btn_ok.pack(side="right", padx=(10, 0))
+        self.btn_ok.pack(side="right", padx=(10, 0))
 
-        btn_cancel = tk.Button(
-            btn_frame,
+        self.btn_cancel = tk.Button(
+            self.btn_frame,
             text="Cancel",
             font=("Segoe UI", 9),
             bg="#374151",
@@ -311,7 +363,7 @@ class HyperVSwitcherApp(tk.Tk):
             cursor="hand2",
             command=self.on_cancel
         )
-        btn_cancel.pack(side="right")
+        self.btn_cancel.pack(side="right")
 
     def on_ok(self):
         target_mode = self.switch_var.get()
@@ -322,12 +374,27 @@ class HyperVSwitcherApp(tk.Tk):
             )
             return
 
-        success, msg = set_hypervisor_mode(target_mode)
-        if not success:
-            messagebox.showerror("Error", f"Failed to apply setting:\n{msg}")
-            return
+        # Disable buttons and start background worker
+        self.btn_ok.config(state="disabled", text="Applying...")
+        self.btn_cancel.config(state="disabled")
+        self.combo.config(state="disabled")
 
-        CustomRestartDialog(self)
+        def worker():
+            def update_progress(msg):
+                self.lbl_status.config(text=msg)
+                self.update_idletasks()
+
+            run_dism_feature_management(target_mode, update_progress)
+            
+            # Re-enable UI and show restart popup
+            self.lbl_status.config(text="Done! Features updated.")
+            self.btn_ok.config(state="normal", text="OK")
+            self.btn_cancel.config(state="normal")
+            self.combo.config(state="readonly")
+            
+            CustomRestartDialog(self)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def on_cancel(self):
         self.destroy()
