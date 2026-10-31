@@ -65,12 +65,12 @@ bcdedit /set hypervisorlaunchtype off
 
 ---
 
-### Tahap 5: Solusi Pamungkas UEFI — Device Guard Readiness Tool (Warscloud Method)
+### Tahap 5: Solusi Pamungkas UEFI — Device Guard Readiness Tool (Firmware Remediation)
 
 > **KASUS UMUM (Terutama Lenovo ThinkPad / Windows 11 Enterprise/Pro):**  
 > Seringkali setelah melakukan Tahap 1–4, saat mengecek di `msinfo32`, baris **Virtualization-based security (VBS)** masih berstatus **Running**. Ini karena Windows mengunci VBS langsung di firmware UEFI.
 
-Untuk menjebol proteksi UEFI ini secara tuntas (merujuk pada solusi komunitas & [Troubleshoot GNS3 – Blog Warscloud](https://blog.warscloud.com/troubleshoot-gns3/)):
+Untuk menjebol proteksi UEFI ini secara tuntas menggunakan tool resmi Microsoft:
 
 #### 1. Siapkan File `DG_Readiness_Tool_v3.6.ps1`
 * File script resmi Microsoft ini sudah kami sediakan di repositori ini. Silakan unduh file `DG_Readiness_Tool_v3.6.ps1` (atau ekstrak dari folder repositori).
@@ -161,6 +161,5 @@ pyinstaller --noconsole --onefile --uac-admin --name "HyperV-KVM-Switcher" app.p
 ---
 
 ## ⚖️ License & Attribution
-- Reference method by [Troubleshoot GNS3 – Blog Warscloud](https://blog.warscloud.com/troubleshoot-gns3/).
-- Tooling powered by Microsoft Device Guard Readiness Script.
+- Tooling powered by Microsoft Device Guard and Credential Guard Hardware Readiness Tool.
 - Switcher App released under the **MIT License**. Free to use, modify, and distribute.
