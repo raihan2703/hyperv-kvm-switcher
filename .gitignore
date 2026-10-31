@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build & Dist
+build/
+dist/
+*.spec
+
+# Virtual Environments
+venv/
+.env/
+env/
+
+# IDE
+.vscode/
+.idea/
