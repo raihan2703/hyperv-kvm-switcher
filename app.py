@@ -22,10 +22,28 @@ MODE_ACTIVE = "Hyper-V Active (for enable WSL2, Docker, etc)"
 MODE_INACTIVE = "Hyper-V Inactive (for nested KVM in GNS3)"
 MODE_UNKNOWN = "Unknown / Undetermined"
 
-def get_base_dir():
+def get_script_path():
+    """
+    Finds DG_Readiness_Tool_v3.6.ps1 regardless of whether the app is running
+    as a Python script, inside dist folder, or bundled.
+    """
+    candidates = []
     if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
+        exe_dir = os.path.dirname(sys.executable)
+        candidates.append(os.path.join(exe_dir, "DG_Readiness_Tool_v3.6.ps1"))
+        candidates.append(os.path.join(exe_dir, "..", "DG_Readiness_Tool_v3.6.ps1"))
+    
+    file_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(file_dir, "DG_Readiness_Tool_v3.6.ps1"))
+    candidates.append(os.path.join(file_dir, "dist", "DG_Readiness_Tool_v3.6.ps1"))
+    candidates.append(r"D:\hyperv-kvm-switcher\DG_Readiness_Tool_v3.6.ps1")
+    candidates.append(r"D:\hyperv-kvm-switcher\dist\DG_Readiness_Tool_v3.6.ps1")
+
+    for p in candidates:
+        abs_p = os.path.abspath(p)
+        if os.path.exists(abs_p):
+            return abs_p
+    return None
 
 def is_admin():
     try:
@@ -73,10 +91,8 @@ def get_current_hypervisor_mode():
 
 def run_mode_switch_workflow(target_mode, progress_callback=None):
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-    base_dir = get_base_dir()
 
     if target_mode == MODE_ACTIVE:
-        # 1. Enable Windows Features for WSL2
         if progress_callback:
             progress_callback("Enabling VirtualMachinePlatform & WSL...")
         
@@ -89,13 +105,11 @@ def run_mode_switch_workflow(target_mode, progress_callback=None):
             creationflags=flags
         )
 
-        # 2. Set BCDedit to auto
         if progress_callback:
             progress_callback("Configuring bootloader to auto...")
         subprocess.run(["bcdedit", "/set", "{current}", "hypervisorlaunchtype", "auto"], creationflags=flags)
 
     else: # MODE_INACTIVE (for GNS3 & KVM)
-        # 1. Disable Virtual Machine Platform
         if progress_callback:
             progress_callback("Disabling VirtualMachinePlatform...")
         subprocess.run(
@@ -103,20 +117,28 @@ def run_mode_switch_workflow(target_mode, progress_callback=None):
             creationflags=flags
         )
 
-        # 2. Set BCDedit to off
         if progress_callback:
             progress_callback("Configuring bootloader to off...")
         subprocess.run(["bcdedit", "/set", "{current}", "hypervisorlaunchtype", "off"], creationflags=flags)
 
-        # 3. Run DG_Readiness_Tool to trigger UEFI VBS remediation
-        ps_script = os.path.join(base_dir, "DG_Readiness_Tool_v3.6.ps1")
-        if os.path.exists(ps_script):
+        ps_script = get_script_path()
+        if ps_script and os.path.exists(ps_script):
             if progress_callback:
-                progress_callback("Applying UEFI VBS remediation (DG Tool)...")
-            subprocess.run(
-                ["powershell", "-ExecutionPolicy", "Bypass", "-File", ps_script, "-Disable", "-ReadyForRemediation"],
+                progress_callback(f"Executing DG Readiness Tool ({os.path.basename(ps_script)})...")
+            
+            script_dir = os.path.dirname(ps_script)
+            # Run powershell directly in script's working directory
+            res = subprocess.run(
+                ["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", 
+                 f"Set-Location '{script_dir}'; .\\DG_Readiness_Tool_v3.6.ps1 -Disable -ReadyForRemediation"],
+                capture_output=True,
+                text=True,
                 creationflags=flags
             )
+            print("DG Tool output:", res.stdout, res.stderr)
+        else:
+            if progress_callback:
+                progress_callback("Warning: DG_Readiness_Tool_v3.6.ps1 not found!")
 
     return True
 
@@ -130,7 +152,7 @@ class CustomRestartDialog(tk.Toplevel):
     def __init__(self, parent, target_mode):
         super().__init__(parent)
         self.title("Restart Required")
-        self.geometry("460x230")
+        self.geometry("480x240")
         self.resizable(False, False)
         self.configure(bg="#1E1E1E")
         self.transient(parent)
@@ -141,8 +163,8 @@ class CustomRestartDialog(tk.Toplevel):
         ph = parent.winfo_height()
         px = parent.winfo_x()
         py = parent.winfo_y()
-        w = 460
-        h = 230
+        w = 480
+        h = 240
         x = px + max(0, (pw - w) // 2)
         y = py + max(0, (ph - h) // 2)
         self.geometry(f"{w}x{h}+{x}+{y}")
@@ -152,17 +174,17 @@ class CustomRestartDialog(tk.Toplevel):
 
         note_extra = ""
         if target_mode == MODE_INACTIVE:
-            note_extra = "\n(Note: Press F3 or Windows Key when prompted on boot to accept UEFI opt-out)"
+            note_extra = "\n⚠️ IMPORTANT: Press F3 or Windows Key when prompted on boot\nto confirm UEFI VBS Opt-Out!"
 
         msg = tk.Label(
             self,
-            text=f"Configuration applied successfully!{note_extra}\nWould you like to restart your computer now?",
+            text=f"Configuration & DG Tool applied successfully!{note_extra}\n\nWould you like to restart your computer now?",
             font=("Segoe UI", 9),
             bg="#1E1E1E",
             fg="#EDEDED",
             justify="center"
         )
-        msg.pack(pady=(0, 18))
+        msg.pack(pady=(0, 15))
 
         btn_frame = tk.Frame(self, bg="#1E1E1E")
         btn_frame.pack(fill="x", padx=30)
@@ -211,7 +233,7 @@ class HyperVSwitcherApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Hyper-V & KVM Mode Switcher")
-        self.geometry("540x390")
+        self.geometry("550x400")
         self.resizable(False, False)
         self.configure(bg="#121212")
 
@@ -221,8 +243,8 @@ class HyperVSwitcherApp(tk.Tk):
 
     def center_window(self):
         self.update_idletasks()
-        w = 540
-        h = 390
+        w = 550
+        h = 400
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
         x = (sw - w) // 2
