@@ -25,12 +25,16 @@ This issue occurs because the Windows Hypervisor and Virtualization-Based Securi
 
 ---
 
-### ✨ Key Features
-- **Accurate WMI & System Detection**: Automatically checks `VirtualizationBasedSecurityStatus` and bootloader settings to display real-time status.
-- **Unified 1-Click Automation**: Eliminates manual terminal commands, registry tweaks, and feature toggling.
-- **Smart Target Selection**: Pre-selects the opposite mode in the dropdown menu.
-- **Self-Elevating Admin**: Automatically requests UAC Administrator privileges on launch.
-- **Guided Reboot Flow**: Provides instant reboot prompts with built-in UEFI confirmation reminders.
+### 📁 Repository Structure
+```text
+hyperv-kvm-switcher/
+├── HyperV-KVM-Mode-Switcher.exe   # Standalone executable (Ready-to-use, no Python needed)
+├── DG_Readiness_Tool_v3.6.ps1     # UEFI VBS Remediation Script
+├── DefaultWindows_*.xml / .p7b    # DG Tool policy dependencies
+├── app.py                         # Complete Python source code
+├── README.md                      # Documentation
+└── LICENSE                        # MIT License
+```
 
 ---
 
@@ -43,35 +47,37 @@ This issue occurs because the Windows Hypervisor and Virtualization-Based Securi
 
 ---
 
-### 🚀 How to Use
+### 🚀 How to Use (Plug & Play)
 
-1. **Download**:
-   - Go to the **[Releases](../../releases)** page and download `HyperV-KVM-Mode-Switcher.exe` along with the helper scripts.
-   - Or run directly from `dist/HyperV-KVM-Mode-Switcher.exe`.
-2. **Launch**:
-   - Double-click `HyperV-KVM-Mode-Switcher.exe` and allow the Administrator prompt (UAC).
+No Python installation or compilation is required for regular users!
+
+1. **Clone the Repository**:
+   ```powershell
+   git clone https://github.com/raihan2703/hyperv-kvm-switcher.git
+   cd hyperv-kvm-switcher
+   ```
+2. **Run the Executable**:
+   - Double-click **`HyperV-KVM-Mode-Switcher.exe`** directly from the repository folder.
+   - Accept the Administrator (UAC) prompt.
 3. **Switch Mode**:
-   - The app will display your **Current Mode**.
+   - The app displays your **Current Mode**.
    - Select your desired mode from the **Switch to:** dropdown.
    - Click **OK**.
 4. **Reboot**:
-   - When the dialog appears, click **Restart Now**.
+   - When the confirmation popup appears, click **Restart Now**.
    - *(Note: When switching to GNS3 KVM Mode for the first time, press **F3** or **Windows Key** on the UEFI boot screen to confirm VBS opt-out).*
 5. **Done!**
    - Boot into Windows and launch either GNS3 (with `KVM: True`) or WSL2 with full performance.
 
 ---
 
-### 🛠️ Build from Source
+### 🛠️ Optional: Run or Build from Source (Developers)
+If you prefer running or modifying the Python source code directly:
 ```powershell
-# Clone the repository
-git clone https://github.com/raihan2703/hyperv-kvm-switcher.git
-cd hyperv-kvm-switcher
-
-# Run source directly
+# Run source code
 python app.py
 
-# Or compile single executable
+# Or rebuild the executable
 pip install pyinstaller
 pyinstaller --noconsole --onefile --uac-admin --name "HyperV-KVM-Mode-Switcher" app.py
 ```
@@ -96,12 +102,16 @@ Masalah ini terjadi karena Windows Hypervisor dan Virtualization-Based Security 
 
 ---
 
-### ✨ Fitur Utama
-- **Deteksi Status Akurat (WMI & System State)**: Menampilkan status aktif saat ini secara presisi tanpa salah baca.
-- **Otomatisasi Penuh 1-Klik**: Tidak perlu lagi membuka CMD, Registry Editor, atau menu *Turn Windows features on or off* secara manual.
-- **Pemilihan Mode Cerdas**: Dropdown otomatis memilih mode sebaliknya untuk efisiensi pengguna.
-- **Auto UAC Administrator**: Otomatis meminta izin Administrator saat aplikasi dibuka.
-- **Dialog Restart Terpandu**: Menyediakan dialog konfirmasi restart cepat lengkap dengan petunjuk konfirmasi UEFI.
+### 📁 Struktur Repositori
+```text
+hyperv-kvm-switcher/
+├── HyperV-KVM-Mode-Switcher.exe   # File aplikasi langsung pakai (Tanpa perlu install Python)
+├── DG_Readiness_Tool_v3.6.ps1     # Script Remediasi UEFI VBS
+├── DefaultWindows_*.xml / .p7b    # Berkas kebijakan pendukung DG Tool
+├── app.py                         # Source code lengkap Python
+├── README.md                      # Dokumentasi
+└── LICENSE                        # Lisensi MIT
+```
 
 ---
 
@@ -114,22 +124,40 @@ Masalah ini terjadi karena Windows Hypervisor dan Virtualization-Based Security 
 
 ---
 
-### 🚀 Cara Penggunaan
+### 🚀 Cara Penggunaan (Langsung Pakai)
 
-1. **Unduh File**:
-   - Buka halaman **[Releases](../../releases)** dan unduh file `HyperV-KVM-Mode-Switcher.exe`.
-   - Atau jalankan langsung dari folder `dist/HyperV-KVM-Mode-Switcher.exe`.
-2. **Jalankan Aplikasi**:
-   - Klik dua kali `HyperV-KVM-Mode-Switcher.exe` dan izinkan Administrator (UAC).
+Pengguna tidak perlu menginstal Python atau melakukan kompilasi!
+
+1. **Clone Repositori**:
+   ```powershell
+   git clone https://github.com/raihan2703/hyperv-kvm-switcher.git
+   cd hyperv-kvm-switcher
+   ```
+2. **Jalankan Aplikasi Langsung**:
+   - Klik dua kali **`HyperV-KVM-Mode-Switcher.exe`** langsung di dalam folder hasil clone.
+   - Klik **Yes** pada konfirmasi Administrator (UAC).
 3. **Pilih Mode**:
-   - Aplikasi akan menampilkan **Current Mode** Anda saat ini.
-   - Pilih mode yang diinginkan pada dropdown **Switch to:**.
+   - Status mode aktif Anda akan tampil di **Current Mode**.
+   - Pilih mode tujuan pada menu **Switch to:**.
    - Klik tombol **OK**.
 4. **Restart Komputer**:
-   - Pada jendela pop-up, klik **Restart Now**.
+   - Klik **Restart Now** pada dialog yang muncul.
    - *(Catatan: Saat beralih ke Mode GNS3 KVM pertama kali, tekan tombol **F3** atau **Windows Key** pada layar konfirmasi teks putih UEFI saat laptop booting).*
 5. **Selesai!**
-   - Setelah masuk Windows, buka GNS3 VM (KVM langsung bernilai **True**) atau nikmati WSL2 dengan performa optimal.
+   - Setelah booting masuk Windows, GNS3 VM langsung berjalan dengan status **`KVM: True`** atau WSL2 dapat langsung digunakan.
+
+---
+
+### 🛠️ Opsi Tambahan: Menjalankan / Build dari Source Code (Developer)
+Bagi pengguna yang ingin memodifikasi atau menjalankan source code Python:
+```powershell
+# Menjalankan langsung dari script Python
+python app.py
+
+# Atau build ulang file .exe
+pip install pyinstaller
+pyinstaller --noconsole --onefile --uac-admin --name "HyperV-KVM-Mode-Switcher" app.py
+```
 
 ---
 

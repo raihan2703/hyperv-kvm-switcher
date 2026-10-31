@@ -4,9 +4,8 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Build & Dist
+# Build temporary
 build/
-dist/
 *.spec
 
 # Virtual Environments
